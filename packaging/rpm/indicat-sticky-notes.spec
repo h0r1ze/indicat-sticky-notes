@@ -1,6 +1,6 @@
 Name:           indicat-sticky-notes
-Version:        0.2.1
-Release:        3%{?dist}
+Version:        0.2.2
+Release:        1%{?dist}
 Summary:        Sticky notes for the Linux desktop (GTK3)
 License:        MIT
 URL:            https://github.com/h0r1ze/indicat-sticky-notes
@@ -43,6 +43,11 @@ PYTHONPATH=%{buildroot}%{python3_sitelib} %{__python3} -m unittest discover -s t
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Sat Oct 10 2026 h0r1ze <lorddyavol@gmail.com> - 0.2.2-1
+- Font size slider inside the note menu
+- Help window (F1) and About dialog
+- Dash lists: no autoconvert of '- ' by default, '-' plus Tab makes an item
+
 * Sat Oct 10 2026 h0r1ze <lorddyavol@gmail.com> - 0.2.1-3
 - Dash lists: no autoconvert of '- ' by default (option in settings), '-' or '- ' plus Tab makes an item
 
