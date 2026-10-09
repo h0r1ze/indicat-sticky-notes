@@ -6,14 +6,6 @@ import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-COLORS = {
-    "yellow": "#fff59d",
-    "green": "#c5e1a5",
-    "blue": "#90caf9",
-    "pink": "#f8bbd0",
-    "orange": "#ffcc80",
-    "gray": "#e0e0e0",
-}
 DEFAULT_COLOR = "yellow"
 
 
