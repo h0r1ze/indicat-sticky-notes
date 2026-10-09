@@ -1,4 +1,6 @@
 """Оформление заметок: палитры и CSS."""
+from pathlib import Path
+
 import gi
 
 gi.require_version("Gtk", "3.0")
@@ -9,14 +11,7 @@ from . import colors  # noqa: E402
 from .storage import DEFAULT_COLOR  # noqa: E402,F401
 
 # Основные цвета: имя -> (фон листа, фон шапки)
-PALETTE = {
-    "yellow": ("#fff7b8", "#ffe97d"),
-    "green": ("#dcf3c8", "#bce6a0"),
-    "blue": ("#d6eafc", "#acd2f7"),
-    "pink": ("#fde0ea", "#f7b9cf"),
-    "orange": ("#ffe4c0", "#ffca8c"),
-    "purple": ("#e8defa", "#cfc0f2"),
-}
+PALETTE = colors.NAMED
 
 # Дизайнерская палитра, 4 ряда по 8: пастельные, яркие, глубокие, тёмные.
 # Цвет текста и шапки для них подбирается автоматически (см. colors.py).
@@ -35,7 +30,7 @@ window.sticky { background-color: rgba(0,0,0,0); }
 
 .note {
     border-radius: 12px;
-    box-shadow: 0 8px 18px rgba(0,0,0,0.28), 0 1px 3px rgba(0,0,0,0.22);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.05);
 }
 .note.flat { border-radius: 0; border: 1px solid rgba(0,0,0,0.35); box-shadow: none; }
 
@@ -55,25 +50,28 @@ window.sticky { background-color: rgba(0,0,0,0); }
 .note textview, .note textview text {
     background-color: rgba(0,0,0,0);
     font-family: "Open Sans", "Noto Sans", sans-serif;
-    font-size: 13pt;
 }
-.note .placeholder { font-size: 13pt; font-style: italic; }
+.note .placeholder { font-style: italic; }
+.note .bar label.title { font-size: 11px; font-weight: bold; margin: 0 4px; }
 .note .grip { font-size: 12px; }
 
 .swatch {
     min-width: 24px; min-height: 24px; padding: 0; border-radius: 12px;
-    border: 2px solid rgba(255,255,255,0.9); box-shadow: 0 1px 4px rgba(0,0,0,0.45);
+    border: 2px solid rgba(255,255,255,0.9); box-shadow: 0 0 0 1px rgba(0,0,0,0.10);
     background-image: none;
     transition: all 120ms ease-in-out;
 }
-.swatch:hover { box-shadow: 0 2px 7px rgba(0,0,0,0.6); }
+.swatch:hover { box-shadow: 0 0 0 1px rgba(0,0,0,0.35); }
 window.palette-popup { background-color: rgba(0,0,0,0); }
 .palette-card {
     background-color: #f7f6f4; color: #3b3320; border-radius: 10px;
-    box-shadow: 0 8px 18px rgba(0,0,0,0.28), 0 1px 3px rgba(0,0,0,0.22);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.05);
 }
 .palette-card.flat { border-radius: 0; border: 1px solid rgba(0,0,0,0.35); box-shadow: none; }
 .palette-card button { color: #3b3320; }
+.palette-card.dark { background-color: #2b2d31; color: #ecebe8; }
+.palette-card.dark button { color: #ecebe8; }
+.palette-card.dark .palette-caption { color: rgba(236,235,232,0.65); }
 .palette-caption { font-size: 10px; font-weight: bold; color: rgba(59,51,32,0.6); }
 """
 
@@ -95,6 +93,7 @@ def note_css(cls, body, bar):
 .note.{cls} textview, .note.{cls} textview text {{ color: {text}; caret-color: {text}; }}
 .note.{cls} textview text selection {{ background-color: {_rgba(text, 0.30)}; color: {text}; }}
 .note.{cls} .placeholder {{ color: {_rgba(text, 0.45)}; }}
+.note.{cls} .bar label.title {{ color: {_rgba(text, 0.80)}; }}
 .note.{cls} .grip {{ color: {_rgba(text, 0.40)}; }}
 """
 
@@ -114,6 +113,8 @@ def bar_color(color):
 
 _installed = False
 _custom_classes = set()
+_font_provider = None
+DEFAULT_FONT_SIZE = 13
 
 
 def _add_to_screen(css):
@@ -133,6 +134,39 @@ def install():
     parts += [note_css(name, body, bar) for name, (body, bar) in PALETTE.items()]
     _add_to_screen("\n".join(parts))
     _installed = True
+    set_default_font_size(DEFAULT_FONT_SIZE)
+
+
+def set_default_font_size(points):
+    """Размер шрифта заметок, у которых свой размер не задан."""
+    global _font_provider
+    css = (f".note textview, .note textview text {{ font-size: {int(points)}pt; }}"
+           f".note .placeholder {{ font-size: {int(points)}pt; }}")
+    if _font_provider is None:
+        _font_provider = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), _font_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+    _font_provider.load_from_data(css.encode())
+
+
+_system_prefers_dark = None
+
+
+def apply_ui_theme(choice):
+    """'system' | 'light' | 'dark' — тема диалогов, менеджера и палитры."""
+    global _system_prefers_dark
+    gtk_settings = Gtk.Settings.get_default()
+    if _system_prefers_dark is None:
+        _system_prefers_dark = bool(gtk_settings.get_property("gtk-application-prefer-dark-theme"))
+    prefer = {"dark": True, "light": False}.get(choice, _system_prefers_dark)
+    gtk_settings.set_property("gtk-application-prefer-dark-theme", prefer)
+
+
+def is_dark():
+    gtk_settings = Gtk.Settings.get_default()
+    name = (gtk_settings.get_property("gtk-theme-name") or "").lower()
+    return bool(gtk_settings.get_property("gtk-application-prefer-dark-theme")) or "dark" in name
 
 
 def css_class_for(color):
@@ -156,3 +190,12 @@ def paint_swatch(button, color):
     button.get_style_context().add_provider(
         provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
     )
+
+
+def install_icons():
+    """Подключить значки из папки data/icons (запуск из исходников)."""
+    base = Path(__file__).resolve().parent.parent / "data" / "icons"
+    if base.is_dir():
+        icon_theme = Gtk.IconTheme.get_default()
+        if str(base) not in icon_theme.get_search_path():
+            icon_theme.append_search_path(str(base))

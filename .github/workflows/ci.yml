@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 xvfb xauth libxtst6 \
+            fonts-noto-core desktop-file-utils
+      - name: Validate desktop file
+        run: desktop-file-validate data/indicat-sticky-notes.desktop
+      - name: Unit and GUI tests (virtual X server)
+        run: xvfb-run -a /usr/bin/python3 -m unittest discover -s tests -t . -v
+
+  deb:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-setuptools dpkg-dev
+      - name: Build .deb
+        run: ./packaging/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: indicat-sticky-notes-deb
+          path: build/*.deb

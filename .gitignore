@@ -7,3 +7,5 @@ dist/
 
 # Ярлык создаётся ./create-shortcut.sh
 *.desktop
+build/
+*.egg-info/

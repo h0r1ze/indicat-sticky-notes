@@ -3,6 +3,23 @@ import re
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
+# Основные цвета: имя -> (фон листа, фон шапки). Последние два — тёмные.
+NAMED = {
+    "yellow": ("#fff7b8", "#ffe97d"),
+    "green": ("#dcf3c8", "#bce6a0"),
+    "blue": ("#d6eafc", "#acd2f7"),
+    "pink": ("#fde0ea", "#f7b9cf"),
+    "orange": ("#ffe4c0", "#ffca8c"),
+    "purple": ("#e8defa", "#cfc0f2"),
+    "graphite": ("#33363d", "#44474f"),
+    "midnight": ("#1f3a4d", "#2b4d66"),
+}
+NAMED_LABELS = {
+    "yellow": "Жёлтый", "green": "Зелёный", "blue": "Голубой", "pink": "Розовый",
+    "orange": "Оранжевый", "purple": "Сиреневый", "graphite": "Графитовый",
+    "midnight": "Тёмно-синий",
+}
+
 DARK_TEXT = "#2b2518"
 LIGHT_TEXT = "#f5f1e8"
 MIN_CONTRAST = 4.5  # WCAG AA для основного текста

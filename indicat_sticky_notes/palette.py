@@ -42,7 +42,8 @@ class PalettePopup(Gtk.Window):
             spacing=6,
             margin=self._margin,
         )
-        card_style = card.get_style_context()
+        self._card_style = card.get_style_context()
+        card_style = self._card_style
         card_style.add_class("palette-card")
         if not rounded:
             card_style.add_class("flat")
@@ -98,6 +99,10 @@ class PalettePopup(Gtk.Window):
             return
         if GLib.get_monotonic_time() / 1000 - self._closed_at < _REOPEN_GUARD_MS:
             return  # это тот же клик, что только что закрыл окно
+        if theme.is_dark():
+            self._card_style.add_class("dark")
+        else:
+            self._card_style.remove_class("dark")
         self.show_all()
         self._place_under(anchor)
         self.present()

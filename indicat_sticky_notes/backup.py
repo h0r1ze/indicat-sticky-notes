@@ -42,6 +42,23 @@ def create(notes, reason="manual", directory=None, now=None):
     return path
 
 
+def default_name(now=None) -> str:
+    """Имя файла для ручной копии, которое предлагается по умолчанию."""
+    return f"notes-{(now or datetime.now()).strftime('%Y%m%d-%H%M%S')}-manual.json"
+
+
+def save_to(notes, path):
+    """Записать копию в выбранный пользователем файл (без ограничения числа копий).
+
+    Расширение .json добавляется, если его нет. Возвращает итоговый путь.
+    """
+    path = Path(path)
+    if path.suffix.lower() != ".json":
+        path = path.with_name(path.name + ".json")
+    storage.write_atomic(path, storage.dump_notes(notes))
+    return path
+
+
 def list_backups(directory=None):
     """Копии из папки, новые первыми."""
     directory = Path(directory) if directory else default_dir()

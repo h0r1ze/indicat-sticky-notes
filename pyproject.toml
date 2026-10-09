@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "indicat-sticky-notes"
+dynamic = ["version"]
+description = "Стикеры для рабочего стола Linux на Python и GTK3 с иконкой в трее"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "h0r1ze" }]
+keywords = ["sticky notes", "gtk", "desktop"]
+classifiers = [
+    "Environment :: X11 Applications :: GTK",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+]
+# PyGObject и GTK3 ставятся системным пакетным менеджером, а не из PyPI.
+
+[project.urls]
+Homepage = "https://github.com/h0r1ze/indicat-sticky-notes"
+
+[project.scripts]
+indicat-sticky-notes = "indicat_sticky_notes.__main__:main"
+
+[tool.setuptools]
+packages = ["indicat_sticky_notes"]
+
+[tool.setuptools.dynamic]
+version = { attr = "indicat_sticky_notes.__version__" }
+
+[tool.setuptools.data-files]
+"share/applications" = ["data/indicat-sticky-notes.desktop"]
+"share/icons/hicolor/scalable/apps" = ["data/icons/hicolor/scalable/apps/indicat-sticky-notes.svg"]

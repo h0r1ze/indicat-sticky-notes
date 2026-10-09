@@ -10,7 +10,7 @@ Name=Стикеры
 Comment=Заметки на рабочем столе
 Exec=\"$dir/run.sh\"
 Path=$dir
-Icon=accessories-text-editor
+Icon=$dir/data/icons/hicolor/scalable/apps/indicat-sticky-notes.svg
 Terminal=false
 Categories=Utility;
 "
