@@ -12,6 +12,7 @@ BuildRequires:  python3-setuptools
 BuildRequires:  desktop-file-utils
 Requires:       python3-gobject
 Requires:       gtk3
+Requires:       libX11
 
 %description
 Sticky notes for the desktop: coloured notes with a designer palette, checklists,
