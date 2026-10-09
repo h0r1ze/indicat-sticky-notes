@@ -1,6 +1,6 @@
 Name:           indicat-sticky-notes
 Version:        0.2.0
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Sticky notes for the Linux desktop (GTK3)
 License:        MIT
 URL:            https://github.com/h0r1ze/indicat-sticky-notes
@@ -43,5 +43,8 @@ PYTHONPATH=%{buildroot}%{python3_sitelib} %{__python3} -m unittest discover -s t
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Sat Oct 10 2026 h0r1ze <lorddyavol@gmail.com> - 0.2.0-2
+- Font size slider, Word-style dash lists
+
 * Sat Oct 10 2026 h0r1ze <lorddyavol@gmail.com> - 0.2.0-1
 - Initial package
