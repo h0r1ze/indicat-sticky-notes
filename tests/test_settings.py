@@ -66,6 +66,16 @@ class SettingsTest(unittest.TestCase):
             self.assertEqual(set(s.values), set(settings.DEFAULTS))
         self.assertEqual(s["theme"], "dark")  # из последнего файла
 
+    def test_dash_autoconvert_is_off_by_default_and_accepts_only_booleans(self):
+        s = Settings(self.path)
+        self.assertIs(s["dash_autoconvert"], False)
+        s.update(dash_autoconvert=True)
+        self.assertIs(s["dash_autoconvert"], True)
+        s.update(dash_autoconvert="да")        # мусор не принимается: остаётся значение по умолчанию
+        self.assertIs(s["dash_autoconvert"], False)
+        s.update(dash_autoconvert=1)
+        self.assertIs(s["dash_autoconvert"], False)
+
     def test_notes_path(self):
         s = Settings(self.path)
         self.assertEqual(s.notes_path(), storage.default_path())

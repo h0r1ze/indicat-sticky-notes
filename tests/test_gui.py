@@ -684,15 +684,45 @@ class GuiStage2Test(GuiTest):
     def press(self, window, keyval, state=0):
         return window._on_key_press(window.view, key(keyval, state))
 
-    def test_hyphen_and_space_becomes_long_dash(self):
+    def test_typing_hyphen_does_not_turn_into_long_dash_by_default(self):
+        """Регрессия: «-» и «- » в начале строки раньше сразу заменялись на длинное тире."""
+        (window,) = self.start({})
+        for text in ("-", "- ", "- молоко", "    - вложенный", "слово - слово"):
+            self.put_text(window, text)
+            pump(0.2)
+            self.assertEqual(self.text_of(window), text, text)
+
+    def test_hyphen_and_space_becomes_long_dash_when_enabled_in_settings(self):
+        self.settings.update(dash_autoconvert=True)
         (window,) = self.start({})
         self.put_text(window, "- молоко")
         self.assertEqual(self.text_of(window), "— молоко")
         self.put_text(window, "    - вложенный")
         self.assertEqual(self.text_of(window), "    — вложенный")
+        self.put_text(window, "-")                                # одиночный дефис без пробела не трогаем
+        self.assertEqual(self.text_of(window), "-")
+
+    def test_dash_autoconvert_switch_in_settings_window(self):
+        self.start()
+        self.app.open_settings()
+        window = self.app.settings_window
+        self.assertFalse(window.dash_switch.get_active())
+        window.dash_switch.set_active(True)
+        self.assertTrue(self.settings["dash_autoconvert"])
+        self.settings.update(dash_autoconvert=False)              # окно следит за настройкой
+        self.assertFalse(window.dash_switch.get_active())
 
     def test_hyphen_then_tab_makes_a_list_item(self):
         (window,) = self.start({})
+        self.put_text(window, "-")
+        self.assertTrue(self.press(window, Gdk.KEY_Tab))
+        self.assertEqual(self.text_of(window), "— ")
+        self.put_text(window, "- ")                               # и «дефис, пробел, Tab» тоже
+        self.assertTrue(self.press(window, Gdk.KEY_Tab))
+        self.assertEqual(self.text_of(window), "— ")
+        self.put_text(window, "    -")                            # с отступом сохраняется вложенность
+        self.assertTrue(self.press(window, Gdk.KEY_Tab))
+        self.assertEqual(self.text_of(window), "    — ")
         self.put_text(window, "-")
         self.assertTrue(self.press(window, Gdk.KEY_Tab))
         self.assertEqual(self.text_of(window), "— ")
@@ -703,7 +733,7 @@ class GuiStage2Test(GuiTest):
 
     def test_ordinary_hyphens_are_left_alone(self):
         (window,) = self.start({})
-        for text in ("слово-слово", "-молоко", "а - б", "-- шутка"):
+        for text in ("слово-слово", "-молоко", "а - б", "-- шутка", "- пункт"):
             self.put_text(window, text)
             self.assertEqual(self.text_of(window), text)
         self.put_text(window, "обычный текст")
@@ -795,7 +825,9 @@ class GuiStage2Test(GuiTest):
 
     def test_dash_list_survives_save_and_reload(self):
         (window,) = self.start({})
-        self.put_text(window, "- раз")
+        self.put_text(window, "-")
+        self.press(window, Gdk.KEY_Tab)
+        window.view.get_buffer().insert_at_cursor("раз")
         self.press(window, Gdk.KEY_Return)
         window.view.get_buffer().insert_at_cursor("два")
         self.press(window, Gdk.KEY_Return)

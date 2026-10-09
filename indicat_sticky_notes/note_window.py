@@ -1,4 +1,6 @@
 """Окно одной заметки."""
+import re
+
 import gi
 
 gi.require_version("Gtk", "3.0")
@@ -827,7 +829,9 @@ class NoteWindow(Gtk.Window):
         if converted != line:
             self._replace_prefix(start, 4, converted[:2])
             return False
-        if checklist.dash_converted(line) != line:
+        # Автозамена «- » на длинное тире включается в настройках: по умолчанию дефис остаётся
+        # дефисом, а список делает «-» и Tab.
+        if self.app.settings["dash_autoconvert"] and checklist.dash_converted(line) != line:
             marker = start.copy()
             marker.forward_chars(len(line) - len(line.lstrip(" ")))
             self._replace_prefix(marker, 2, checklist.DASH)
@@ -959,10 +963,11 @@ class NoteWindow(Gtk.Window):
         cursor = buffer.get_iter_at_mark(buffer.get_insert())
         start, end = self._line_bounds(cursor)
         line = buffer.get_text(start, end, False)
-        if line.strip(" ") == "-" and cursor.equal(end) and line.endswith("-"):
+        match = re.fullmatch(r"( *)- ?", line)
+        if match and cursor.equal(end):  # «-» или «- » и Tab превращают строку в пункт списка
             marker = start.copy()
-            marker.forward_chars(len(line) - 1)
-            self._replace_prefix(marker, 1, checklist.DASH)
+            marker.forward_chars(len(match.group(1)))
+            self._replace_prefix(marker, len(line) - len(match.group(1)), checklist.DASH)
             return True
         return False
 

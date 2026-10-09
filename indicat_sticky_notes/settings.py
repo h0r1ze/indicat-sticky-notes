@@ -14,6 +14,7 @@ DEFAULTS = {
     "hotkey_new": "<Primary><Alt>n",
     "hotkey_toggle": "<Primary><Alt>s",
     "trash_days": storage.TRASH_DAYS,
+    "dash_autoconvert": False,  # «- » в начале строки сразу превращать в длинное тире
 }
 CHOICES = {
     "tray_click": ("toggle", "manager"),
@@ -42,6 +43,8 @@ def validate(key, value):
     if key == "default_color":
         ok = isinstance(value, str) and (value in colors.NAMED or colors.normalize(value))
         return colors.normalize(value) or value if ok else default
+    if key == "dash_autoconvert":
+        return value if isinstance(value, bool) else default
     if key == "data_dir":
         return value if isinstance(value, str) else default
     return value if isinstance(value, str) else default  # горячие клавиши

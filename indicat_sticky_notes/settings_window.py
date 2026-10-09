@@ -50,6 +50,16 @@ class SettingsWindow(Gtk.Window):
         )
         self._attach("Запускать при входе в систему", self.autostart_switch)
 
+        self.dash_switch = Gtk.Switch(halign=Gtk.Align.START)
+        self.dash_switch.set_tooltip_text(
+            "Выключено: список с тире делают «-» и Tab. Включено: достаточно набрать «- » и пробел."
+        )
+        self.dash_switch.connect(
+            "notify::active",
+            lambda s, _p: None if self._loading else self.settings.update(dash_autoconvert=s.get_active()),
+        )
+        self._attach("Автозамена «- » на длинное тире", self.dash_switch)
+
         shortcut = Gtk.Button(label="Создать ярлык на рабочем столе", halign=Gtk.Align.START)
         shortcut.connect("clicked", lambda _b: self.app.create_desktop_shortcut())
         self._attach("Ярлык запуска", shortcut)
@@ -153,6 +163,7 @@ class SettingsWindow(Gtk.Window):
             self.color_combo.append(s["default_color"], f"Особый ({s['default_color']})")
             self.color_combo.set_active_id(s["default_color"])
         self.autostart_switch.set_active(autostart.is_enabled())
+        self.dash_switch.set_active(s["dash_autoconvert"])
         folder = s["data_dir"]
         self.dir_label.set_text(folder or f"По умолчанию ({storage.default_dir()})")
         self._refresh_hotkeys()
