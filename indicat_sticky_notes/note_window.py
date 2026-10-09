@@ -91,6 +91,7 @@ class NoteWindow(Gtk.Window):
         )
         self._apply_color()
         self._apply_font()
+        self._update_collapsed_class()
         self._update_placeholder()
         self._update_pin_button()
         self._update_title_label()
@@ -333,6 +334,7 @@ class NoteWindow(Gtk.Window):
 
     def _apply_collapsed(self):
         collapsed = self.note.collapsed
+        self._update_collapsed_class()
         self.body.set_visible(not collapsed)
         self.grip.set_visible(not collapsed)
         self.set_size_request(MIN_WIDTH, 1 if collapsed else MIN_HEIGHT)
@@ -340,6 +342,14 @@ class NoteWindow(Gtk.Window):
             self.resize(max(self.note.width, MIN_WIDTH), 1)
         else:
             self.resize(max(self.note.width, MIN_WIDTH), max(self.note.height, MIN_HEIGHT))
+
+    def _update_collapsed_class(self):
+        """У свёрнутой заметки скруглены все углы шапки, а не только верхние."""
+        ctx = self.card.get_style_context()
+        if self.note.collapsed:
+            ctx.add_class("collapsed")
+        else:
+            ctx.remove_class("collapsed")
 
     # --- заголовок, прозрачность, размер шрифта, группа ---
 

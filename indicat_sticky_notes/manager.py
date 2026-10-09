@@ -11,8 +11,9 @@ from . import theme  # noqa: E402
 from .keys import is_key  # noqa: E402
 
 COL_ID, COL_DOT, COL_TITLE, COL_GROUP, COL_STATE, COL_TIME, COL_SORT = range(7)
-ALL_GROUPS = "\0all"
-NO_GROUP = "\0none"
+# Не "\0..." : GTK обрезает строки по NUL, и оба идентификатора превращались в "".
+ALL_GROUPS = "\x1fall"
+NO_GROUP = "\x1fnone"
 
 
 def format_time(stamp: float, now: float = None) -> str:

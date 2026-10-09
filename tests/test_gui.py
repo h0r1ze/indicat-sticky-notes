@@ -20,6 +20,7 @@ except (ImportError, ValueError):
 if HAVE_DISPLAY:
     from indicat_sticky_notes import backup, checklist, exchange
     from indicat_sticky_notes.app import StickyApp
+    from indicat_sticky_notes.manager import ALL_GROUPS, NO_GROUP
     from indicat_sticky_notes.settings import Settings
     from indicat_sticky_notes.storage import Note, NoteStore
 
@@ -347,7 +348,7 @@ class GuiStage2Test(GuiTest):
         manager.group_combo.set_active_id("Работа")
         pump()
         self.assertEqual(len(manager.model), 2)
-        manager.group_combo.set_active_id("\0none")
+        manager.group_combo.set_active_id(NO_GROUP)
         pump()
         self.assertEqual([r[2] for r in manager.model], ["c"])
         self.app.set_group_visible("Работа", False)
@@ -355,6 +356,27 @@ class GuiStage2Test(GuiTest):
         self.assertTrue(c.get_visible())
         self.app.set_group_visible("Работа", True)
         self.assertTrue(a.get_visible() and b.get_visible())
+
+    def test_manager_shows_every_note_by_default_and_ids_differ(self):
+        """Регрессия: оба идентификатора содержали NUL, превращались в "" и «Все группы» прятали сгруппированные."""
+        self.start({"text": "a", "group": "Работа"}, {"text": "b", "group": "Дом"}, {"text": "c"})
+        self.assertNotEqual(ALL_GROUPS, NO_GROUP)
+        self.assertTrue(ALL_GROUPS and NO_GROUP and "\0" not in ALL_GROUPS + NO_GROUP)
+        self.app.open_manager()
+        pump()
+        manager = self.app.manager
+        self.assertEqual(manager.group_combo.get_active_id(), ALL_GROUPS)
+        self.assertIsNone(manager.current_group())
+        self.assertEqual(len(manager.model), 3)
+        self.assertEqual(manager.status.get_text(), "Заметок: 3")
+
+    def test_collapsed_note_has_rounded_class(self):
+        (window,) = self.start({"text": "a"})
+        style = window.card.get_style_context()
+        window.set_collapsed(True)
+        self.assertTrue(style.has_class("collapsed"))
+        window.set_collapsed(False)
+        self.assertFalse(style.has_class("collapsed"))
 
     def test_window_menu_sets_group(self):
         (window,) = self.start({"text": "a"})

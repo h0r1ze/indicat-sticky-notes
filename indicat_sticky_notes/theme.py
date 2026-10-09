@@ -35,7 +35,8 @@ window.sticky { background-color: rgba(0,0,0,0); }
 .note.flat { border-radius: 0; border: 1px solid rgba(0,0,0,0.35); box-shadow: none; }
 
 .note .bar { border-radius: 12px 12px 0 0; padding: 4px 6px; }
-.note.flat .bar { border-radius: 0; }
+.note.collapsed .bar { border-radius: 12px; }
+.note.flat .bar, .note.flat.collapsed .bar { border-radius: 0; }
 .note .bar button {
     min-width: 26px; min-height: 26px; padding: 0;
     border: none; border-radius: 13px; box-shadow: none; background: none;
