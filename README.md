@@ -4,7 +4,7 @@
 
 # Стикеры
 
-**Красивые цветные заметки на рабочем столе Linux.**<br>
+**Цветные заметки на рабочем столе Linux.**<br>
 Чекбоксы, форматирование, группы, корзина, синхронизация между компьютерами и иконка в трее.
 
 [![CI](https://github.com/h0r1ze/indicat-sticky-notes/actions/workflows/ci.yml/badge.svg)](https://github.com/h0r1ze/indicat-sticky-notes/actions/workflows/ci.yml)
