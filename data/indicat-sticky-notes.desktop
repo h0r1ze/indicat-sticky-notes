@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Стикеры
+Name[en]=Sticky Notes
+Comment=Заметки на рабочем столе
+Comment[en]=Sticky notes for the desktop
+Exec=indicat-sticky-notes
+Icon=indicat-sticky-notes
+Terminal=false
+Categories=Utility;GTK;
+Keywords=notes;sticky;memo;заметки;стикеры;
