@@ -679,6 +679,133 @@ class GuiStage2Test(GuiTest):
         out = self.app.export_note(window.note, window)
         self.assertIn("## Имя", out.read_text(encoding="utf-8"))
 
+    # --- списки с длинным тире (как в Word) ---
+
+    def press(self, window, keyval, state=0):
+        return window._on_key_press(window.view, key(keyval, state))
+
+    def test_hyphen_and_space_becomes_long_dash(self):
+        (window,) = self.start({})
+        self.put_text(window, "- молоко")
+        self.assertEqual(self.text_of(window), "— молоко")
+        self.put_text(window, "    - вложенный")
+        self.assertEqual(self.text_of(window), "    — вложенный")
+
+    def test_hyphen_then_tab_makes_a_list_item(self):
+        (window,) = self.start({})
+        self.put_text(window, "-")
+        self.assertTrue(self.press(window, Gdk.KEY_Tab))
+        self.assertEqual(self.text_of(window), "— ")
+        buffer = window.view.get_buffer()
+        self.assertEqual(buffer.get_iter_at_mark(buffer.get_insert()).get_offset(), 2)  # курсор после маркера
+        window.view.get_buffer().insert_at_cursor("первый")
+        self.assertEqual(self.text_of(window), "— первый")
+
+    def test_ordinary_hyphens_are_left_alone(self):
+        (window,) = self.start({})
+        for text in ("слово-слово", "-молоко", "а - б", "-- шутка"):
+            self.put_text(window, text)
+            self.assertEqual(self.text_of(window), text)
+        self.put_text(window, "обычный текст")
+        self.assertFalse(self.press(window, Gdk.KEY_Tab))      # Tab вне списка — обычное поведение
+        self.put_text(window, "☐ дело")
+        self.assertFalse(self.press(window, Gdk.KEY_Tab))      # и у чекбокса тоже
+
+    def test_tab_and_shift_tab_change_nesting_level(self):
+        (window,) = self.start({"text": "— пункт"})
+        buffer = window.view.get_buffer()
+        buffer.place_cursor(buffer.get_end_iter())
+        self.assertTrue(self.press(window, Gdk.KEY_Tab))
+        self.assertEqual(self.text_of(window), "    — пункт")
+        self.assertTrue(self.press(window, Gdk.KEY_Tab))
+        self.assertEqual(self.text_of(window), "        — пункт")
+        for _ in range(5):
+            self.press(window, Gdk.KEY_Tab)
+        self.assertEqual(self.text_of(window), "            — пункт")   # не глубже трёх уровней
+        self.assertTrue(self.press(window, Gdk.KEY_ISO_Left_Tab, Gdk.ModifierType.SHIFT_MASK))
+        self.assertEqual(self.text_of(window), "        — пункт")
+        self.press(window, Gdk.KEY_ISO_Left_Tab, Gdk.ModifierType.SHIFT_MASK)
+        self.press(window, Gdk.KEY_ISO_Left_Tab, Gdk.ModifierType.SHIFT_MASK)
+        self.assertEqual(self.text_of(window), "— пункт")
+        self.assertFalse(self.press(window, Gdk.KEY_ISO_Left_Tab, Gdk.ModifierType.SHIFT_MASK))  # выше некуда
+
+    def test_tab_at_line_start_keeps_cursor_before_marker(self):
+        (window,) = self.start({"text": "— пункт"})
+        buffer = window.view.get_buffer()
+        buffer.place_cursor(buffer.get_start_iter())
+        self.press(window, Gdk.KEY_Tab)
+        self.assertEqual(buffer.get_iter_at_mark(buffer.get_insert()).get_offset(), 4)
+
+    def test_tab_on_selection_indents_every_list_line(self):
+        (window,) = self.start({"text": "— раз\nтекст\n— два"})
+        buffer = window.view.get_buffer()
+        buffer.select_range(buffer.get_start_iter(), buffer.get_end_iter())
+        self.assertTrue(self.press(window, Gdk.KEY_Tab))
+        self.assertEqual(self.text_of(window), "    — раз\nтекст\n    — два")
+        self.press(window, Gdk.KEY_ISO_Left_Tab, Gdk.ModifierType.SHIFT_MASK)
+        self.assertEqual(self.text_of(window), "— раз\nтекст\n— два")
+
+    def test_enter_continues_nested_list_and_ends_it(self):
+        (window,) = self.start({"text": "— раз\n    — вложенный"})
+        buffer = window.view.get_buffer()
+        buffer.place_cursor(buffer.get_end_iter())
+        self.assertTrue(self.press(window, Gdk.KEY_Return))
+        self.assertEqual(self.text_of(window), "— раз\n    — вложенный\n    — ")
+        self.assertTrue(self.press(window, Gdk.KEY_Return))      # пустой вложенный пункт выносится выше
+        self.assertEqual(self.text_of(window), "— раз\n    — вложенный\n— ")
+        self.assertTrue(self.press(window, Gdk.KEY_Return))      # пустой верхний пункт заканчивает список
+        self.assertEqual(self.text_of(window), "— раз\n    — вложенный\n")
+        self.assertFalse(self.press(window, Gdk.KEY_Return))     # дальше обычный Enter
+
+    def test_enter_in_middle_of_item_splits_it_into_two_items(self):
+        (window,) = self.start({"text": "— купить хлеб"})
+        buffer = window.view.get_buffer()
+        buffer.place_cursor(buffer.get_iter_at_offset(9))        # после «купить »
+        self.press(window, Gdk.KEY_Return)
+        self.assertEqual(self.text_of(window), "— купить \n— хлеб")
+
+    def test_backspace_right_after_marker_removes_it(self):
+        (window,) = self.start({"text": "— текст"})
+        buffer = window.view.get_buffer()
+        buffer.place_cursor(buffer.get_iter_at_offset(2))
+        self.assertTrue(self.press(window, Gdk.KEY_BackSpace))
+        self.assertEqual(self.text_of(window), "текст")
+        buffer.place_cursor(buffer.get_iter_at_offset(3))        # внутри слова: обычный Backspace
+        self.assertFalse(self.press(window, Gdk.KEY_BackSpace))
+
+    def test_wrapped_list_lines_get_hanging_indent(self):
+        long_text = "— " + "очень длинный пункт списка, " * 6
+        (window,) = self.start({"text": long_text + "\nобычная строка"})
+        pump(0.4)
+        buffer = window.view.get_buffer()
+        names = [t.get_property("name") for t in buffer.get_iter_at_offset(3).get_tags()]
+        hang = [n for n in names if n and n.startswith("hang")]
+        self.assertEqual(len(hang), 1)
+        tag = buffer.get_tag_table().lookup(hang[0])
+        self.assertLess(tag.get_property("indent"), 0)           # отрицательный — висячий отступ
+        plain = [t.get_property("name") for t in buffer.get_iter_at_offset(len(long_text) + 3).get_tags()]
+        self.assertFalse([n for n in plain if n and n.startswith("hang")])
+        # вложенный пункт висит глубже
+        window.note.text = window.note.text
+        self.put_text(window, "— a\n    — b")
+        starts = [t.get_property("indent") for line in (0, 1)
+                  for t in buffer.get_iter_at_line(line).get_tags() if (t.get_property("name") or "").startswith("hang")]
+        self.assertEqual(len(starts), 2)
+        self.assertLess(starts[1], starts[0])
+
+    def test_dash_list_survives_save_and_reload(self):
+        (window,) = self.start({})
+        self.put_text(window, "- раз")
+        self.press(window, Gdk.KEY_Return)
+        window.view.get_buffer().insert_at_cursor("два")
+        self.press(window, Gdk.KEY_Return)
+        self.press(window, Gdk.KEY_Tab)
+        window.view.get_buffer().insert_at_cursor("вложенный")
+        window.flush()
+        reloaded = NoteStore(self.store.path)
+        reloaded.load()
+        self.assertEqual(reloaded.notes[0].text, "— раз\n— два\n    — вложенный")
+
     # --- ползунок размера шрифта ---
 
     def open_font_slider(self, window):

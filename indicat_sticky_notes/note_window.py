@@ -46,6 +46,8 @@ class NoteWindow(Gtk.Window):
         self._typing = {}  # формат для следующих набранных символов: имя -> включён
         self._typing_pos = None
         self._cursors = {}
+        self._hang_tags = set()  # имена тегов висячего отступа списков
+        self._destroyed = False
         self._font_provider = Gtk.CssProvider()
         self._placeholder_provider = Gtk.CssProvider()
 
@@ -101,6 +103,7 @@ class NoteWindow(Gtk.Window):
         self._update_pin_button()
         self._update_title_label()
         self._refresh_done_style()
+        GLib.idle_add(self._refresh_list_style)
         self.move(note.x, note.y)
         self.connect("configure-event", self._on_configure)
         self.connect("delete-event", self._on_close)
@@ -287,6 +290,7 @@ class NoteWindow(Gtk.Window):
         return False
 
     def _on_destroy(self, _widget):
+        self._destroyed = True
         # Отложенную запись отменяем: заметка уже могла уйти в корзину.
         if self._save_source is not None:
             GLib.source_remove(self._save_source)
@@ -439,6 +443,7 @@ class NoteWindow(Gtk.Window):
         self._placeholder_provider.load_from_data(placeholder_css.encode())
         if self._font_popup.get_visible():
             self._font_popup.sync()  # размер изменили клавишами или колесом, пока ползунок открыт
+        GLib.idle_add(self._refresh_list_style)  # ширина маркера зависит от шрифта
 
     def set_group(self, group):
         self.note.group = group.strip()
@@ -557,8 +562,9 @@ class NoteWindow(Gtk.Window):
         self._update_placeholder()
         self._update_title_label()
         if not self._busy:
-            GLib.idle_add(self._convert_checkbox_prefix)
+            GLib.idle_add(self._convert_prefix)
         self._refresh_done_style()
+        self._refresh_list_style()
         self._clear_highlight()
         self._schedule_save()
 
@@ -714,14 +720,21 @@ class NoteWindow(Gtk.Window):
             cursor = max(line_start, cursor + len(new_prefix) - old_len)
         buffer.place_cursor(buffer.get_iter_at_offset(cursor))
 
-    def _convert_checkbox_prefix(self):
-        """Набранное «[ ] » на текущей строке превращается в ☐."""
+    def _convert_prefix(self):
+        """Набранное «[ ] » на текущей строке превращается в ☐, а «- » — в длинное тире."""
+        if self._destroyed:
+            return False
         buffer = self.view.get_buffer()
         start, end = self._line_bounds(buffer.get_iter_at_mark(buffer.get_insert()))
         line = buffer.get_text(start, end, False)
         converted = checklist.converted(line)
         if converted != line:
             self._replace_prefix(start, 4, converted[:2])
+            return False
+        if checklist.dash_converted(line) != line:
+            marker = start.copy()
+            marker.forward_chars(len(line) - len(line.lstrip(" ")))
+            self._replace_prefix(marker, 2, checklist.DASH)
         return False
 
     def toggle_checklist(self):
@@ -779,6 +792,13 @@ class NoteWindow(Gtk.Window):
             if event.keyval in (Gdk.KEY_0, Gdk.KEY_KP_0):
                 self.change_font(0)
                 return True
+        if not ctrl:
+            if event.keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab) and self._on_tab(
+                back=bool(shift) or event.keyval == Gdk.KEY_ISO_Left_Tab
+            ):
+                return True
+            if event.keyval == Gdk.KEY_BackSpace and not shift and self._on_backspace():
+                return True
         plain_enter = event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and not (ctrl or shift)
         if not plain_enter:
             return False
@@ -786,14 +806,84 @@ class NoteWindow(Gtk.Window):
         cursor = buffer.get_iter_at_mark(buffer.get_insert())
         start, end = self._line_bounds(cursor)
         line = buffer.get_text(start, end, False)
+        offset = cursor.get_line_offset()
         follow = checklist.on_enter(line)
-        if follow is None or cursor.get_line_offset() < len(checklist.OFF):
-            return False
-        if follow == "":  # Enter на пустом пункте завершает список
-            self._replace_prefix(start, len(line), "")
+        if follow is not None and offset >= len(checklist.OFF):
+            if follow == "":  # Enter на пустом пункте завершает список
+                self._replace_prefix(start, len(line), "")
+            else:
+                buffer.insert_at_cursor("\n" + follow)
+                self.view.scroll_mark_onscreen(buffer.get_insert())
+            return True
+        action = checklist.dash_enter(line)
+        if action is not None and offset >= checklist.dash_indent(line) + len(checklist.DASH):
+            kind, prefix = action
+            if kind == "continue":
+                buffer.insert_at_cursor("\n" + prefix)
+                self.view.scroll_mark_onscreen(buffer.get_insert())
+            else:  # "outdent" или "end": пустой пункт выносится выше или список заканчивается
+                self._replace_prefix(start, len(line), prefix)
+            return True
+        return False
+
+    def _on_tab(self, back):
+        """Tab вкладывает пункт списка с тире глубже, Shift+Tab выносит; «-» + Tab делает пункт."""
+        buffer = self.view.get_buffer()
+        marks = None
+        if buffer.get_has_selection():
+            first, last = buffer.get_selection_bounds()
+            lines = list(range(first.get_line(), last.get_line() + 1))
+            # Выделение запоминаем метками: правки строк его сбрасывают.
+            marks = (buffer.create_mark(None, first, True), buffer.create_mark(None, last, False))
         else:
-            buffer.insert_at_cursor("\n" + follow)
-            self.view.scroll_mark_onscreen(buffer.get_insert())
+            lines = [buffer.get_iter_at_mark(buffer.get_insert()).get_line()]
+        changed = False
+        for n in reversed(lines):  # с конца: смещения предыдущих строк не меняются
+            start = buffer.get_iter_at_line(n)
+            line_offset = start.get_offset()  # итератор после правки недействителен
+            line = buffer.get_text(*self._line_bounds(start), False)
+            if back:
+                cut = len(line) - len(checklist.outdented(line))
+                if cut:
+                    self._replace_prefix(start, cut, "")
+                    changed = True
+            elif checklist.indented(line) != line:
+                cursor = buffer.get_iter_at_mark(buffer.get_insert()).get_offset()
+                self._replace_prefix(start, 0, checklist.INDENT)
+                if cursor == line_offset:  # курсор был в начале строки: остаётся у текста
+                    buffer.place_cursor(buffer.get_iter_at_offset(cursor + len(checklist.INDENT)))
+                changed = True
+        if marks:
+            buffer.select_range(buffer.get_iter_at_mark(marks[0]), buffer.get_iter_at_mark(marks[1]))
+            for mark in marks:
+                buffer.delete_mark(mark)
+            return changed
+        if changed or back or len(lines) != 1:
+            return changed
+        cursor = buffer.get_iter_at_mark(buffer.get_insert())
+        start, end = self._line_bounds(cursor)
+        line = buffer.get_text(start, end, False)
+        if line.strip(" ") == "-" and cursor.equal(end) and line.endswith("-"):
+            marker = start.copy()
+            marker.forward_chars(len(line) - 1)
+            self._replace_prefix(marker, 1, checklist.DASH)
+            return True
+        return False
+
+    def _on_backspace(self):
+        """Backspace сразу за маркером убирает его (как в Word), оставляя текст."""
+        buffer = self.view.get_buffer()
+        if buffer.get_has_selection():
+            return False
+        cursor = buffer.get_iter_at_mark(buffer.get_insert())
+        start, end = self._line_bounds(cursor)
+        line = buffer.get_text(start, end, False)
+        indent = checklist.dash_indent(line)
+        if indent is None or cursor.get_line_offset() != indent + len(checklist.DASH):
+            return False
+        marker = start.copy()
+        marker.forward_chars(indent)
+        self._replace_prefix(marker, len(checklist.DASH), "")
         return True
 
     def _on_scroll(self, _widget, event):
@@ -850,6 +940,45 @@ class NoteWindow(Gtk.Window):
             text_window.set_cursor(self._cursor("default" if over_box else "text"))
         return False
 
+    def _prefix_width(self, prefix):
+        """Ширина начала строки (отступ и маркер) в пикселях при текущем шрифте."""
+        layout = self.view.create_pango_layout(prefix + "x")
+        full = layout.get_pixel_size()[0]
+        layout.set_text("x", -1)
+        return full - layout.get_pixel_size()[0]
+
+    def _refresh_list_style(self):
+        """Перенесённые строки пункта выравниваются под текстом, а не под маркером."""
+        if self._destroyed:
+            return False
+        buffer = self.view.get_buffer()
+        begin, finish = buffer.get_bounds()
+        for name in self._hang_tags:
+            buffer.remove_tag_by_name(name, begin, finish)
+        text = self.note.text
+        if not any(mark.strip() in text for mark in (checklist.DASH, checklist.OFF, checklist.ON)):
+            return False
+        widths = {}
+        it = buffer.get_start_iter()
+        while True:
+            start, end = self._line_bounds(it)
+            line = buffer.get_text(start, end, False)
+            indent = checklist.dash_indent(line)
+            if indent is not None:
+                prefix = line[: indent + len(checklist.DASH)]
+            else:
+                prefix = line[:2] if checklist.is_item(line) else None
+            if prefix:
+                width = widths.setdefault(prefix, self._prefix_width(prefix))
+                name = f"hang{width}"
+                if buffer.get_tag_table().lookup(name) is None:
+                    buffer.create_tag(name, indent=-width)
+                self._hang_tags.add(name)
+                buffer.apply_tag_by_name(name, start, end)
+            if not it.forward_line():
+                break
+        return False
+
     def _refresh_done_style(self):
         """Выполненные пункты зачёркиваются и бледнеют."""
         buffer = self.view.get_buffer()
@@ -888,6 +1017,7 @@ class NoteWindow(Gtk.Window):
         self._update_placeholder()
         self._update_title_label()
         self._refresh_done_style()
+        self._refresh_list_style()
         self.set_opacity(self._valid_opacity())
 
     # --- сохранение ---

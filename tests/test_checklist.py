@@ -27,5 +27,47 @@ class ChecklistTest(unittest.TestCase):
         self.assertFalse(c.is_done("☐ не готово"))
 
 
+class DashListTest(unittest.TestCase):
+    def test_detects_items_with_indent(self):
+        self.assertEqual(c.dash_indent("— пункт"), 0)
+        self.assertEqual(c.dash_indent("    — вложенный"), 4)
+        for not_item in ("— ", "—пункт", "- пункт", "текст — тире", "☐ дело", ""):
+            if not_item == "— ":
+                self.assertEqual(c.dash_indent(not_item), 0)  # пустой пункт — всё равно пункт
+            else:
+                self.assertIsNone(c.dash_indent(not_item), not_item)
+
+    def test_hyphen_becomes_long_dash_keeping_indent(self):
+        self.assertEqual(c.dash_converted("- молоко"), "— молоко")
+        self.assertEqual(c.dash_converted("    - вложенный"), "    — вложенный")
+        self.assertEqual(c.dash_converted("- "), "— ")
+        for same in ("-молоко", "-- шутка", "слово - слово", "— уже", "☐ дело", ""):
+            self.assertEqual(c.dash_converted(same), same, same)
+
+    def test_indent_and_outdent(self):
+        line = "— пункт"
+        deeper = c.indented(line)
+        self.assertEqual(deeper, "    — пункт")
+        self.assertEqual(c.indented(deeper), "        — пункт")
+        self.assertEqual(c.outdented(deeper), line)
+        self.assertEqual(c.outdented(line), line)               # выше некуда
+        self.assertEqual(c.indented("обычная строка"), "обычная строка")
+        self.assertEqual(c.outdented("   — кривой отступ"), "— кривой отступ")
+        line = "— пункт"
+        for _ in range(10):
+            line = c.indented(line)
+        self.assertEqual(c.dash_indent(line), c.MAX_INDENT)     # глубже трёх уровней не уходим
+
+    def test_enter_continues_outdents_or_ends(self):
+        self.assertEqual(c.dash_enter("— купить"), ("continue", "— "))
+        self.assertEqual(c.dash_enter("    — вложенный"), ("continue", "    — "))
+        self.assertEqual(c.dash_enter("        — пусто"[:8] + "— "), ("outdent", "    — "))
+        self.assertEqual(c.dash_enter("    — "), ("outdent", "— "))
+        self.assertEqual(c.dash_enter("— "), ("end", ""))
+        self.assertEqual(c.dash_enter("— "  + "   "), ("end", ""))
+        self.assertIsNone(c.dash_enter("обычная строка"))
+        self.assertIsNone(c.dash_enter("☐ дело"))
+
+
 if __name__ == "__main__":
     unittest.main()
