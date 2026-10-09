@@ -679,6 +679,121 @@ class GuiStage2Test(GuiTest):
         out = self.app.export_note(window.note, window)
         self.assertIn("## Имя", out.read_text(encoding="utf-8"))
 
+    # --- ползунок размера шрифта ---
+
+    def open_font_slider(self, window):
+        window._font_popup.toggle(window.menu_button)
+        pump(0.5)
+        return window._font_popup
+
+    def test_font_slider_sets_size_and_shows_it(self):
+        (window,) = self.start({"text": "a"})
+        popup = self.open_font_slider(window)
+        default = self.settings["default_font_size"]
+        self.assertEqual(popup.scale.get_value(), default)       # при открытии показывает текущий размер
+        self.assertEqual(popup.value_label.get_text(), f"{default} пт")
+        popup.scale.set_value(21)
+        self.assertEqual(window.note.font_size, 21)
+        self.assertEqual(popup.value_label.get_text(), "21 пт")
+        popup.scale.set_value(500)                                # дальше предела не уйти
+        self.assertEqual(window.note.font_size, 40)
+        popup.scale.set_value(-3)
+        self.assertEqual(window.note.font_size, 8)
+
+    def test_font_slider_reset_button_and_keyboard_stay_in_sync(self):
+        (window,) = self.start({"text": "a", "font_size": 20})
+        popup = self.open_font_slider(window)
+        self.assertEqual(popup.scale.get_value(), 20)
+        window.change_font(+1)                                    # Ctrl++ при открытом ползунке
+        self.assertEqual(popup.scale.get_value(), 21)
+        popup.reset_button.clicked()
+        self.assertEqual(window.note.font_size, 0)
+        self.assertEqual(popup.scale.get_value(), self.settings["default_font_size"])
+        self.assertIn(f"({self.settings['default_font_size']} пт)", popup.reset_button.get_label())
+
+    def test_font_slider_change_is_saved(self):
+        (window,) = self.start({"text": "a"})
+        popup = self.open_font_slider(window)
+        popup.scale.set_value(25)
+        window.flush()
+        reloaded = NoteStore(self.store.path)
+        reloaded.load()
+        self.assertEqual(reloaded.notes[0].font_size, 25)
+
+    def test_font_slider_is_opened_from_font_submenu_and_closes_on_escape(self):
+        (window,) = self.start({"text": "a"})
+        menu = window.build_menu()
+        font_item = next(i for i in menu.get_children()
+                         if isinstance(i, Gtk.MenuItem) and i.get_label() == "Размер шрифта")
+        entries = [i for i in font_item.get_submenu().get_children()
+                   if isinstance(i, Gtk.MenuItem) and not isinstance(i, Gtk.SeparatorMenuItem)]
+        self.assertEqual(entries[0].get_label(), "Ползунок…")     # ползунок — первым пунктом
+        entries[0].activate()
+        pump(0.5)
+        popup = window._font_popup
+        self.assertTrue(popup.get_visible())
+        self.assertTrue(popup._on_key(popup, key(Gdk.KEY_Escape)))
+        self.assertFalse(popup.get_visible())
+
+    def test_font_slider_closes_when_note_is_hidden(self):
+        (window,) = self.start({"text": "a"})
+        popup = self.open_font_slider(window)
+        window.hide_note()
+        self.assertFalse(popup.get_visible())
+
+    @unittest.skipUnless(__import__("indicat_sticky_notes.hotkeys", fromlist=["x"]).supported(),
+                         "нужен X11")
+    def test_dragging_the_slider_with_the_mouse(self):
+        """Настоящее перетаскивание ползунка указателем (XTest), а не вызов set_value."""
+        import ctypes
+        import ctypes.util
+        from indicat_sticky_notes import hotkeys
+        xtest_lib = ctypes.util.find_library("Xtst")
+        if not xtest_lib:
+            self.skipTest("нет libXtst")
+        x11, xtst = hotkeys._load_x11(), ctypes.CDLL(xtest_lib)
+        xtst.XTestFakeMotionEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
+        xtst.XTestFakeButtonEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+        display = x11.XOpenDisplay(None)
+        self.addCleanup(x11.XCloseDisplay, display)
+
+        def move(x, y):
+            xtst.XTestFakeMotionEvent(display, -1, int(x), int(y), 0)
+            x11.XSync(display, 0)
+            pump(0.05)
+
+        def button(down):
+            xtst.XTestFakeButtonEvent(display, 1, 1 if down else 0, 0)
+            x11.XSync(display, 0)
+            pump(0.05)
+
+        (window,) = self.start({"text": "a"})
+        window._font_popup.close_on_focus_out = False  # без оконного менеджера фокус не определён
+        popup = self.open_font_slider(window)
+        self.assertTrue(popup.get_visible())
+        scale = popup.scale
+        tx, ty = scale.translate_coordinates(popup, 0, 0)
+        px, py = popup.get_window().get_origin()[1:]
+        width, height = scale.get_allocated_width(), scale.get_allocated_height()
+        start, end = scale.get_slider_range()
+        y = py + ty + height / 2
+
+        def drag(from_x, to_x):
+            move(from_x, y)
+            button(True)
+            steps = 12
+            for i in range(1, steps + 1):
+                move(from_x + (to_x - from_x) * i / steps, y)
+            button(False)
+
+        grab_x = px + tx + (start + end) / 2
+        drag(grab_x, px + tx + width + 40)                        # тянем за правый край
+        self.assertEqual(window.note.font_size, 40)
+        start, end = scale.get_slider_range()
+        drag(px + tx + (start + end) / 2, px + tx - 40)           # и обратно за левый
+        self.assertEqual(window.note.font_size, 8)
+        self.assertEqual(popup.value_label.get_text(), "8 пт")
+
     # --- замечания по первому тестированию ---
 
     def test_resize_cursor_is_not_left_on_the_whole_note(self):

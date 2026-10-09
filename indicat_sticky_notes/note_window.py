@@ -8,12 +8,13 @@ from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from . import checklist, colors, theme  # noqa: E402
 from .keys import is_key  # noqa: E402
+from .fontpopup import FONT_MAX, FONT_MIN, FontPopup  # noqa: E402
 from .palette import PalettePopup  # noqa: E402
 from .storage import Note  # noqa: E402
 
 SAVE_DELAY_MS = 500
 MIN_WIDTH, MIN_HEIGHT = 240, 140
-FONT_RANGE = (8, 40)
+FONT_RANGE = (FONT_MIN, FONT_MAX)
 OPACITIES = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4)
 
 # Теги форматирования: имя -> свойства Gtk.TextTag. Их диапазоны сохраняются в note.formats.
@@ -67,8 +68,12 @@ class NoteWindow(Gtk.Window):
         margin = theme.SHADOW_MARGIN if self._rounded else 0
 
         self._palette = PalettePopup(self, self.set_color, self._choose_custom_color)
+        self._font_popup = FontPopup(
+            self, self.effective_font_size, self.app.default_font_size,
+            self.set_font_size, lambda: self.change_font(0),
+        )
         self.connect("destroy", self._on_destroy)
-        self.connect("hide", lambda _w: self._palette.close_popup())
+        self.connect("hide", self._close_popups)
 
         self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin=margin)
         card_style = self.card.get_style_context()
@@ -287,6 +292,11 @@ class NoteWindow(Gtk.Window):
             GLib.source_remove(self._save_source)
             self._save_source = None
         self._palette.destroy()
+        self._font_popup.destroy()
+
+    def _close_popups(self, _widget=None):
+        self._palette.close_popup()
+        self._font_popup.close_popup()
 
     def _on_close(self, _widget, _event):
         # Закрытие окна только прячет заметку; удаляется она кнопкой.
@@ -407,9 +417,14 @@ class NoteWindow(Gtk.Window):
         """delta=0 — вернуть размер по умолчанию."""
         if delta == 0:
             self.note.font_size = 0
+            self._apply_font()
+            self._schedule_save()
         else:
-            size = self.effective_font_size() + delta
-            self.note.font_size = max(FONT_RANGE[0], min(FONT_RANGE[1], size))
+            self.set_font_size(self.effective_font_size() + delta)
+
+    def set_font_size(self, size):
+        """Задать размер шрифта в пунктах (в пределах FONT_RANGE)."""
+        self.note.font_size = max(FONT_RANGE[0], min(FONT_RANGE[1], int(size)))
         self._apply_font()
         self._schedule_save()
 
@@ -422,6 +437,8 @@ class NoteWindow(Gtk.Window):
             view_css = placeholder_css = ""
         self._font_provider.load_from_data(view_css.encode())
         self._placeholder_provider.load_from_data(placeholder_css.encode())
+        if self._font_popup.get_visible():
+            self._font_popup.sync()  # размер изменили клавишами или колесом, пока ползунок открыт
 
     def set_group(self, group):
         self.note.group = group.strip()
@@ -469,6 +486,8 @@ class NoteWindow(Gtk.Window):
         item(formats, "Чекбокс   Ctrl+L", self.toggle_checklist)
 
         font = submenu("Размер шрифта")
+        item(font, "Ползунок…", lambda: self._font_popup.toggle(self.menu_button))
+        font.append(Gtk.SeparatorMenuItem())
         item(font, "Крупнее   Ctrl++", lambda: self.change_font(+1))
         item(font, "Мельче   Ctrl+−", lambda: self.change_font(-1))
         item(font, f"По умолчанию ({self.app.default_font_size()} пт)   Ctrl+0",
