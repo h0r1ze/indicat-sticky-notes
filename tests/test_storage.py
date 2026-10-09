@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from indicat_sticky_notes.storage import NoteStore
+from indicat_sticky_notes.storage import Note, NoteStore
 
 
 class NoteStoreTest(unittest.TestCase):
@@ -52,6 +52,43 @@ class NoteStoreTest(unittest.TestCase):
         store = NoteStore(self.path)
         store.load()
         self.assertEqual(store.notes[0].text, "x")
+
+    def test_listeners_are_called_on_save(self):
+        store = NoteStore(self.path)
+        calls = []
+        store.listeners.append(lambda: calls.append(1))
+        store.add(text="x")
+        store.save()
+        self.assertEqual(len(calls), 2)
+
+    def test_search_is_case_insensitive_and_empty_query_returns_all(self):
+        store = NoteStore(self.path)
+        store.add(text="Купить МОЛОКО")
+        store.add(text="Позвонить")
+        self.assertEqual([n.text for n in store.search("молоко")], ["Купить МОЛОКО"])
+        self.assertEqual(len(store.search("  ")), 2)
+        self.assertEqual(store.search("нет такого"), [])
+
+    def test_preview_uses_first_non_empty_line_and_truncates(self):
+        self.assertEqual(Note(text="\n\n  привет  \nвторая").preview(), "привет")
+        self.assertEqual(Note(text="").preview(), "")
+        self.assertEqual(len(Note(text="x" * 200).preview(20)), 20)
+
+    def test_new_fields_default_for_old_files(self):
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text(json.dumps({"notes": [{"id": "1", "text": "старая"}]}), encoding="utf-8")
+        store = NoteStore(self.path)
+        store.load()
+        note = store.notes[0]
+        self.assertFalse(note.pinned)
+        self.assertFalse(note.hidden)
+
+    def test_touch_updates_timestamp(self):
+        store = NoteStore(self.path)
+        note = store.add(text="x")
+        note.updated = 0
+        store.touch(note)
+        self.assertGreater(note.updated, 0)
 
 
 if __name__ == "__main__":
