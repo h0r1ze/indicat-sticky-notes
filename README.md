@@ -106,12 +106,14 @@ cd indicat-sticky-notes
 sudo apt install ./build/indicat-sticky-notes_*_all.deb
 ```
 
-**Fedora, RED OS** — spec лежит в `packaging/rpm/` (нужны `rpm-build`, `python3-devel`, `python3-setuptools`):
+**Fedora, RED OS** — spec и скрипт сборки лежат в `packaging/` (нужны `rpm-build`, `python3-devel`, `python3-rpm-macros`, `python3-setuptools`):
 
 ```bash
-git archive --prefix=indicat-sticky-notes-0.2.0/ -o ~/rpmbuild/SOURCES/indicat-sticky-notes-0.2.0.tar.gz HEAD
-rpmbuild -ba packaging/rpm/indicat-sticky-notes.spec
+./packaging/build-rpm.sh
+sudo dnf install ./build/indicat-sticky-notes-*.noarch.rpm
 ```
+
+Готовый `.rpm` для RED OS 8 также лежит на странице [релизов](https://github.com/h0r1ze/indicat-sticky-notes/releases/latest). Пакет `noarch` (чистый Python), он ставится на x86_64 и другие архитектуры.
 
 **Из исходников** понадобятся GTK 3 и PyGObject (Debian/Ubuntu/Mint: `python3-gi gir1.2-gtk-3.0`, Fedora/RED OS: `python3-gobject gtk3`):
 
