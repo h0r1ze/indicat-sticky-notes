@@ -218,6 +218,9 @@ class SettingsWindow(Gtk.Window):
 
     def _on_key_press(self, _widget, event):
         if self._capturing is None:
+            if event.keyval == Gdk.KEY_F1:
+                self.app.open_help()
+                return True
             return False
         key, self._capturing = self._capturing, None
         keyval = Gdk.keyval_to_lower(event.keyval)

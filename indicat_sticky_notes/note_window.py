@@ -8,12 +8,12 @@ from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from . import checklist, colors, theme  # noqa: E402
 from .keys import is_key  # noqa: E402
-from .fontpopup import FONT_MAX, FONT_MIN, FontPopup  # noqa: E402
 from .palette import PalettePopup  # noqa: E402
 from .storage import Note  # noqa: E402
 
 SAVE_DELAY_MS = 500
 MIN_WIDTH, MIN_HEIGHT = 240, 140
+FONT_MIN, FONT_MAX = 8, 40
 FONT_RANGE = (FONT_MIN, FONT_MAX)
 OPACITIES = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4)
 
@@ -70,10 +70,6 @@ class NoteWindow(Gtk.Window):
         margin = theme.SHADOW_MARGIN if self._rounded else 0
 
         self._palette = PalettePopup(self, self.set_color, self._choose_custom_color)
-        self._font_popup = FontPopup(
-            self, self.effective_font_size, self.app.default_font_size,
-            self.set_font_size, lambda: self.change_font(0),
-        )
         self.connect("destroy", self._on_destroy)
         self.connect("hide", self._close_popups)
 
@@ -106,6 +102,7 @@ class NoteWindow(Gtk.Window):
         GLib.idle_add(self._refresh_list_style)
         self.move(note.x, note.y)
         self.connect("configure-event", self._on_configure)
+        self.connect("key-press-event", self._on_window_key)
         self.connect("delete-event", self._on_close)
         self.connect("map", lambda _w: self._apply_collapsed())
 
@@ -289,6 +286,13 @@ class NoteWindow(Gtk.Window):
         self._schedule_save(touch=False)
         return False
 
+    def _on_window_key(self, _widget, event):
+        """F1 открывает справку при любом фокусе в окне заметки."""
+        if event.keyval == Gdk.KEY_F1:
+            self.app.open_help()
+            return True
+        return False
+
     def _on_destroy(self, _widget):
         self._destroyed = True
         # Отложенную запись отменяем: заметка уже могла уйти в корзину.
@@ -296,11 +300,9 @@ class NoteWindow(Gtk.Window):
             GLib.source_remove(self._save_source)
             self._save_source = None
         self._palette.destroy()
-        self._font_popup.destroy()
 
     def _close_popups(self, _widget=None):
         self._palette.close_popup()
-        self._font_popup.close_popup()
 
     def _on_close(self, _widget, _event):
         # Закрытие окна только прячет заметку; удаляется она кнопкой.
@@ -441,13 +443,107 @@ class NoteWindow(Gtk.Window):
             view_css = placeholder_css = ""
         self._font_provider.load_from_data(view_css.encode())
         self._placeholder_provider.load_from_data(placeholder_css.encode())
-        if self._font_popup.get_visible():
-            self._font_popup.sync()  # размер изменили клавишами или колесом, пока ползунок открыт
         GLib.idle_add(self._refresh_list_style)  # ширина маркера зависит от шрифта
 
     def set_group(self, group):
         self.note.group = group.strip()
         self._schedule_save()
+
+    def _font_slider_item(self):
+        """Пункт меню с ползунком размера шрифта.
+
+        Меню GTK забирает события мыши себе и до вложенного ползунка их не доводит,
+        поэтому перетаскивание ведёт _bind_slider_drag.
+        """
+        item = Gtk.MenuItem()
+        box = Gtk.Box(spacing=8, margin_start=6, margin_end=6, margin_top=4, margin_bottom=4)
+        small = Gtk.Label()
+        small.set_markup('<span size="small">A</span>')
+        box.pack_start(small, False, False, 0)
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, FONT_MIN, FONT_MAX, 1)
+        scale.set_draw_value(False)
+        scale.set_size_request(190, -1)
+        scale.set_value(self.effective_font_size())
+        scale.add_mark(self.app.default_font_size(), Gtk.PositionType.BOTTOM, None)  # «по умолчанию»
+        scale.set_tooltip_text("Размер шрифта: потяните ползунок (отметка — размер по умолчанию)")
+        box.pack_start(scale, True, True, 0)
+        big = Gtk.Label()
+        big.set_markup('<span size="x-large">A</span>')
+        box.pack_start(big, False, False, 0)
+        value = Gtk.Label(label=f"{self.effective_font_size()} пт", width_chars=5, xalign=1)
+        box.pack_start(value, False, False, 0)
+
+        def on_change(widget):
+            size = int(round(widget.get_value()))
+            value.set_text(f"{size} пт")
+            self.set_font_size(size)
+
+        scale.connect("value-changed", on_change)
+        item.add(box)
+        item.font_scale = scale  # для тестов
+        return item
+
+    @staticmethod
+    def _bind_slider_drag(item, shells):
+        """Перетаскивание ползунка внутри открытого меню.
+
+        Нажатие над дорожкой ставит значение по положению указателя, движение с зажатой
+        кнопкой ведёт ползунок (даже за границами меню), отпускание гасится, чтобы меню
+        не закрылось как после обычного выбора пункта.
+        """
+        scale = item.font_scale
+        dragging = {"on": False}
+
+        def geometry():
+            toplevel = item.get_toplevel()
+            gdk_window = toplevel.get_window()
+            if gdk_window is None:
+                return None
+            ox, oy = gdk_window.get_origin()[1:]
+            tx, ty = scale.translate_coordinates(toplevel, 0, 0)
+            return ox + tx, oy + ty
+
+        def set_from_pointer(event):
+            origin = geometry()
+            if origin is None:
+                return
+            rect = scale.get_range_rect()
+            start, end = scale.get_slider_range()
+            knob = max(end - start, 1)
+            span = max(rect.width - knob, 1)
+            fraction = (event.x_root - (origin[0] + rect.x + knob / 2)) / span
+            adj = scale.get_adjustment()
+            top = adj.get_upper() - adj.get_page_size()
+            scale.set_value(round(adj.get_lower() + min(1, max(0, fraction)) * (top - adj.get_lower())))
+
+        def on_press(_widget, event):
+            origin = geometry()
+            if event.button != 1 or origin is None:
+                return False
+            inside = (origin[0] <= event.x_root < origin[0] + scale.get_allocated_width()
+                      and origin[1] <= event.y_root < origin[1] + scale.get_allocated_height())
+            if not inside:
+                return False
+            dragging["on"] = True
+            set_from_pointer(event)
+            return True
+
+        def on_motion(_widget, event):
+            if not dragging["on"]:
+                return False
+            set_from_pointer(event)
+            return True
+
+        def on_release(_widget, _event):
+            if not dragging["on"]:
+                return False
+            dragging["on"] = False
+            return True
+
+        item.connect("button-press-event", on_press)
+        for widget in (item, *shells):  # указатель может уйти за пределы пункта
+            widget.connect("motion-notify-event", on_motion)
+            widget.connect("button-release-event", on_release)
 
     # --- меню «⋯» ---
 
@@ -491,10 +587,10 @@ class NoteWindow(Gtk.Window):
         item(formats, "Чекбокс   Ctrl+L", self.toggle_checklist)
 
         font = submenu("Размер шрифта")
-        item(font, "Ползунок…", lambda: self._font_popup.toggle(self.menu_button))
+        slider = self._font_slider_item()
+        font.append(slider)
+        self._bind_slider_drag(slider, (menu, font))
         font.append(Gtk.SeparatorMenuItem())
-        item(font, "Крупнее   Ctrl++", lambda: self.change_font(+1))
-        item(font, "Мельче   Ctrl+−", lambda: self.change_font(-1))
         item(font, f"По умолчанию ({self.app.default_font_size()} пт)   Ctrl+0",
              lambda: self.change_font(0))
 

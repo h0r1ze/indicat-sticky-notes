@@ -54,6 +54,7 @@ class ManagerWindow(Gtk.Window):
 
         self.store.listeners.append(self._schedule_refresh)
         self.connect("destroy", self._on_destroy)
+        self.connect("key-press-event", self._on_f1)
         self.connect("delete-event", lambda w, _e: w.hide() or True)
         self.refresh()
         root.show_all()
@@ -64,6 +65,12 @@ class ManagerWindow(Gtk.Window):
             self._refresh_source = None
         if self._schedule_refresh in self.store.listeners:
             self.store.listeners.remove(self._schedule_refresh)
+
+    def _on_f1(self, _widget, event):
+        if event.keyval == Gdk.KEY_F1:
+            self.app.open_help()
+            return True
+        return False
 
     # --- построение ---
 

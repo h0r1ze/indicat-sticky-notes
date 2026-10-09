@@ -254,7 +254,7 @@ class GuiTest(unittest.TestCase):
         self.assertEqual(labels, [
             "Новая заметка", "Найти заметку…", "Менеджер заметок…", "Показать все", "Скрыть все",
             "Обмен данными", "Резервные копии", "Запускать при входе",
-            "Создать ярлык на рабочем столе", "Настройки…", "Выход"])
+            "Создать ярлык на рабочем столе", "Настройки…", "Справка   F1", "О программе", "Выход"])
 
     def test_tray_menu_lists_groups_when_present(self):
         self.start({"text": "a", "group": "Работа"})
@@ -806,72 +806,78 @@ class GuiStage2Test(GuiTest):
         reloaded.load()
         self.assertEqual(reloaded.notes[0].text, "— раз\n— два\n    — вложенный")
 
-    # --- ползунок размера шрифта ---
+    # --- ползунок размера шрифта в меню ---
 
-    def open_font_slider(self, window):
-        window._font_popup.toggle(window.menu_button)
-        pump(0.5)
-        return window._font_popup
+    @staticmethod
+    def font_submenu(menu):
+        head = next(i for i in menu.get_children()
+                    if isinstance(i, Gtk.MenuItem) and i.get_label() == "Размер шрифта")
+        return head, head.get_submenu()
 
-    def test_font_slider_sets_size_and_shows_it(self):
+    def test_font_submenu_has_slider_and_default_but_no_plus_minus(self):
         (window,) = self.start({"text": "a"})
-        popup = self.open_font_slider(window)
+        menu = window.build_menu()  # держим ссылку
+        _head, sub = self.font_submenu(menu)
+        items = sub.get_children()
+        self.assertTrue(hasattr(items[0], "font_scale"))               # ползунок — первый пункт
+        self.assertIsInstance(items[1], Gtk.SeparatorMenuItem)
+        labels = [i.get_label() for i in items[2:]]
         default = self.settings["default_font_size"]
-        self.assertEqual(popup.scale.get_value(), default)       # при открытии показывает текущий размер
-        self.assertEqual(popup.value_label.get_text(), f"{default} пт")
-        popup.scale.set_value(21)
+        self.assertEqual(labels, [f"По умолчанию ({default} пт)   Ctrl+0"])  # «Крупнее/Мельче» убраны
+
+    def test_menu_slider_sets_size_and_clamps(self):
+        (window,) = self.start({"text": "a"})
+        menu = window.build_menu()
+        scale = self.font_submenu(menu)[1].get_children()[0].font_scale
+        default = self.settings["default_font_size"]
+        self.assertEqual(scale.get_value(), default)           # показывает текущий размер
+        scale.set_value(21)
         self.assertEqual(window.note.font_size, 21)
-        self.assertEqual(popup.value_label.get_text(), "21 пт")
-        popup.scale.set_value(500)                                # дальше предела не уйти
+        scale.set_value(500)
         self.assertEqual(window.note.font_size, 40)
-        popup.scale.set_value(-3)
+        scale.set_value(-3)
         self.assertEqual(window.note.font_size, 8)
 
-    def test_font_slider_reset_button_and_keyboard_stay_in_sync(self):
+    def test_menu_slider_starts_at_the_notes_own_size_and_shows_value(self):
         (window,) = self.start({"text": "a", "font_size": 20})
-        popup = self.open_font_slider(window)
-        self.assertEqual(popup.scale.get_value(), 20)
-        window.change_font(+1)                                    # Ctrl++ при открытом ползунке
-        self.assertEqual(popup.scale.get_value(), 21)
-        popup.reset_button.clicked()
-        self.assertEqual(window.note.font_size, 0)
-        self.assertEqual(popup.scale.get_value(), self.settings["default_font_size"])
-        self.assertIn(f"({self.settings['default_font_size']} пт)", popup.reset_button.get_label())
+        menu = window.build_menu()
+        item = self.font_submenu(menu)[1].get_children()[0]
+        self.assertEqual(item.font_scale.get_value(), 20)
+        item.font_scale.set_value(25)
+        labels = []
 
-    def test_font_slider_change_is_saved(self):
+        def walk(widget):
+            if isinstance(widget, Gtk.Label):
+                labels.append(widget.get_text())
+            if isinstance(widget, Gtk.Container):
+                for child in widget.get_children():
+                    walk(child)
+
+        walk(item)
+        self.assertIn("25 пт", labels)
+
+    def test_default_item_resets_slider_change(self):
+        (window,) = self.start({"text": "a", "font_size": 20})
+        menu = window.build_menu()
+        sub = self.font_submenu(menu)[1]
+        reset = [i for i in sub.get_children() if isinstance(i, Gtk.MenuItem) and (i.get_label() or "").startswith("По умолчанию")][0]
+        reset.activate()
+        self.assertEqual(window.note.font_size, 0)
+        self.assertEqual(window.effective_font_size(), self.settings["default_font_size"])
+
+    def test_menu_slider_change_is_saved(self):
         (window,) = self.start({"text": "a"})
-        popup = self.open_font_slider(window)
-        popup.scale.set_value(25)
+        menu = window.build_menu()
+        self.font_submenu(menu)[1].get_children()[0].font_scale.set_value(25)
         window.flush()
         reloaded = NoteStore(self.store.path)
         reloaded.load()
         self.assertEqual(reloaded.notes[0].font_size, 25)
 
-    def test_font_slider_is_opened_from_font_submenu_and_closes_on_escape(self):
-        (window,) = self.start({"text": "a"})
-        menu = window.build_menu()
-        font_item = next(i for i in menu.get_children()
-                         if isinstance(i, Gtk.MenuItem) and i.get_label() == "Размер шрифта")
-        entries = [i for i in font_item.get_submenu().get_children()
-                   if isinstance(i, Gtk.MenuItem) and not isinstance(i, Gtk.SeparatorMenuItem)]
-        self.assertEqual(entries[0].get_label(), "Ползунок…")     # ползунок — первым пунктом
-        entries[0].activate()
-        pump(0.5)
-        popup = window._font_popup
-        self.assertTrue(popup.get_visible())
-        self.assertTrue(popup._on_key(popup, key(Gdk.KEY_Escape)))
-        self.assertFalse(popup.get_visible())
-
-    def test_font_slider_closes_when_note_is_hidden(self):
-        (window,) = self.start({"text": "a"})
-        popup = self.open_font_slider(window)
-        window.hide_note()
-        self.assertFalse(popup.get_visible())
-
     @unittest.skipUnless(__import__("indicat_sticky_notes.hotkeys", fromlist=["x"]).supported(),
                          "нужен X11")
-    def test_dragging_the_slider_with_the_mouse(self):
-        """Настоящее перетаскивание ползунка указателем (XTest), а не вызов set_value."""
+    def test_dragging_the_slider_inside_the_open_menu_keeps_menu_open(self):
+        """Настоящее перетаскивание мышью (XTest) внутри открытого меню: меню не должно закрыться."""
         import ctypes
         import ctypes.util
         from indicat_sticky_notes import hotkeys
@@ -895,12 +901,17 @@ class GuiStage2Test(GuiTest):
             pump(0.05)
 
         (window,) = self.start({"text": "a"})
-        window._font_popup.close_on_focus_out = False  # без оконного менеджера фокус не определён
-        popup = self.open_font_slider(window)
-        self.assertTrue(popup.get_visible())
-        scale = popup.scale
-        tx, ty = scale.translate_coordinates(popup, 0, 0)
-        px, py = popup.get_window().get_origin()[1:]
+        menu = window.build_menu()
+        menu.popup(None, None, lambda *_a: (60, 60, True), None, 0, Gtk.get_current_event_time())
+        pump(0.5)
+        head, sub = self.font_submenu(menu)
+        menu.select_item(head)          # как при наведении на «Размер шрифта»: раскрывается подменю
+        pump(1.0)
+        self.assertTrue(sub.get_visible())
+        item = sub.get_children()[0]
+        scale = item.font_scale
+        tx, ty = scale.translate_coordinates(sub.get_toplevel(), 0, 0)
+        px, py = sub.get_toplevel().get_window().get_origin()[1:]
         width, height = scale.get_allocated_width(), scale.get_allocated_height()
         start, end = scale.get_slider_range()
         y = py + ty + height / 2
@@ -908,18 +919,113 @@ class GuiStage2Test(GuiTest):
         def drag(from_x, to_x):
             move(from_x, y)
             button(True)
-            steps = 12
-            for i in range(1, steps + 1):
-                move(from_x + (to_x - from_x) * i / steps, y)
+            for i in range(1, 13):
+                move(from_x + (to_x - from_x) * i / 12, y)
             button(False)
 
-        grab_x = px + tx + (start + end) / 2
-        drag(grab_x, px + tx + width + 40)                        # тянем за правый край
+        drag(px + tx + (start + end) / 2, px + tx + width + 40)
         self.assertEqual(window.note.font_size, 40)
+        self.assertTrue(sub.get_visible(), "меню закрылось при отпускании кнопки мыши")
         start, end = scale.get_slider_range()
-        drag(px + tx + (start + end) / 2, px + tx - 40)           # и обратно за левый
+        drag(px + tx + (start + end) / 2, px + tx - 40)
         self.assertEqual(window.note.font_size, 8)
-        self.assertEqual(popup.value_label.get_text(), "8 пт")
+        self.assertTrue(sub.get_visible(), "меню закрылось при втором перетаскивании")
+        menu.popdown()
+
+    # --- справка и «О программе» ---
+
+    def test_help_window_lists_every_section_and_is_reused(self):
+        from indicat_sticky_notes import help_window
+        self.start()
+        self.app.open_help()
+        first = self.app.help_window
+        self.app.open_help()
+        self.assertIs(self.app.help_window, first)               # одно окно, а не новое на каждый F1
+        self.assertTrue(first.get_visible())
+        buffer = first.view.get_buffer()
+        shown = buffer.get_text(*buffer.get_bounds(), True)
+        for title, lines in help_window.HELP_SECTIONS:
+            self.assertIn(title, shown)
+            self.assertIn(lines[0], shown)
+        first.destroy()
+
+    def test_help_mentions_the_shortcuts_the_app_really_has(self):
+        from indicat_sticky_notes import help_window
+        text = help_window.help_text()
+        for needle in ("Ctrl+B", "Ctrl+L", "Ctrl+Alt+N", "Ctrl+Alt+S", "F1", "Tab", "Ctrl+A", "Delete"):
+            self.assertIn(needle, text)
+
+    def test_f1_opens_help_from_note_manager_and_settings(self):
+        (window,) = self.start({"text": "a"})
+        calls = []
+        self.app.open_help = lambda: calls.append("help")
+        self.assertTrue(window._on_window_key(window, key(Gdk.KEY_F1)))
+        self.assertFalse(window._on_window_key(window, key(Gdk.KEY_F2)))
+        self.app.open_manager()
+        self.assertTrue(self.app.manager._on_f1(None, key(Gdk.KEY_F1)))
+        self.assertFalse(self.app.manager._on_f1(None, key(Gdk.KEY_F2)))
+        self.app.open_settings()
+        self.assertTrue(self.app.settings_window._on_key_press(None, key(Gdk.KEY_F1)))
+        self.assertEqual(calls, ["help", "help", "help"])
+
+    @unittest.skipUnless(__import__("indicat_sticky_notes.hotkeys", fromlist=["x"]).supported(),
+                         "нужен X11")
+    def test_real_f1_key_press_opens_help_with_focus_on_header_button_and_on_text(self):
+        """Настоящее нажатие F1 (XTest) при разном фокусе внутри заметки."""
+        import ctypes
+        import ctypes.util
+        from indicat_sticky_notes import hotkeys
+        xtest_lib = ctypes.util.find_library("Xtst")
+        if not xtest_lib:
+            self.skipTest("нет libXtst")
+        x11, xtst = hotkeys._load_x11(), ctypes.CDLL(xtest_lib)
+        xtst.XTestFakeKeyEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+        xtst.XTestFakeMotionEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
+        display = x11.XOpenDisplay(None)
+        self.addCleanup(x11.XCloseDisplay, display)
+        (window,) = self.start({"text": "a", "x": 50, "y": 50})
+        pump(0.4)
+        gdk_window = window.get_window()
+        ox, oy = gdk_window.get_origin()[1:]
+        xtst.XTestFakeMotionEvent(display, -1, ox + 100, oy + 100, 0)   # указатель над заметкой
+        x11.XSync(display, 0)
+        # без оконного менеджера фокус ввода задаём сами, как это сделал бы он при щелчке по заметке
+        x11.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+        x11.XSetInputFocus(display, gdk_window.get_xid() if hasattr(gdk_window, "get_xid") else 0, 1, 0)
+        x11.XSync(display, 0)
+        keycode = x11.XKeysymToKeycode(display, 0xFFBE)                 # XK_F1
+        for focus_on_button in (False, True):
+            self.app.help_window = None
+            if focus_on_button:
+                window.pin_button.grab_focus()      # фокус на кнопке шапки, не в тексте
+            else:
+                window.view.grab_focus()
+            pump(0.2)
+            xtst.XTestFakeKeyEvent(display, keycode, 1, 0)
+            xtst.XTestFakeKeyEvent(display, keycode, 0, 0)
+            x11.XSync(display, 0)
+            pump(0.6)
+            self.assertIsNotNone(self.app.help_window, f"F1 не открыла справку (фокус на кнопке: {focus_on_button})")
+            self.assertTrue(self.app.help_window.get_visible())
+            self.app.help_window.destroy()
+
+    def test_f1_does_not_interrupt_hotkey_capture_in_settings(self):
+        self.start()
+        self.app.open_settings()
+        self.app.open_help = lambda: self.fail("F1 при записи сочетания не должен открывать справку")
+        window = self.app.settings_window
+        window._start_capture("hotkey_new")
+        window._on_key_press(window, key(Gdk.KEY_F1, 0))   # просто не принимается как сочетание
+
+    def test_about_dialog_has_version_site_and_license(self):
+        from indicat_sticky_notes import __version__, help_window
+        dialog = help_window.build_about_dialog()
+        self.assertEqual(dialog.get_version(), __version__)
+        self.assertEqual(dialog.get_website(), help_window.WEBSITE)
+        self.assertEqual(dialog.get_license_type(), Gtk.License.MIT_X11)
+        self.assertEqual(dialog.get_program_name(), "Стикеры")
+        self.assertIn("h0r1ze", dialog.get_authors())
+        dialog.destroy()
 
     # --- замечания по первому тестированию ---
 

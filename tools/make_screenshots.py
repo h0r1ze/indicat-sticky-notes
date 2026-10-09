@@ -180,14 +180,21 @@ def scenes():
 
 # --- настоящие окна ------------------------------------------------------------
 
-def grab(name, extra_trim=True):
-    """Снять корневое окно, обрезать чёрные поля и добавить мягкую тень."""
+def grab(name):
+    """Снять корневое окно, сделать прозрачным внешний чёрный фон и добавить мягкую тень."""
     OUT.mkdir(parents=True, exist_ok=True)
     raw = OUT / f"_{name}.png"
     subprocess.run(["import", "-window", "root", str(raw)], check=True)
+    width, height = map(int, subprocess.run(
+        ["identify", "-format", "%w %h", str(raw)], check=True, capture_output=True, text=True
+    ).stdout.split())
     out = OUT / name
+    # Заливка от углов убирает только внешний фон, а чёрные пиксели внутри окон не трогает.
+    fill = ["-alpha", "set", "-fill", "none", "-fuzz", "0%"]
+    for x, y in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
+        fill += ["-draw", f"color {x},{y} floodfill"]
     subprocess.run(
-        ["convert", str(raw), "-trim", "+repage", "-bordercolor", "none", "-border", "2",
+        ["convert", str(raw), *fill, "-trim", "+repage", "-bordercolor", "none", "-border", "2",
          "(", "+clone", "-background", "black", "-shadow", "35x10+0+6", ")", "+swap",
          "-background", "none", "-layers", "merge", "+repage", str(out)],
         check=True,
@@ -237,6 +244,25 @@ def windows():
         popup_at(menu, 8, 8)
         pump(0.6)
         grab("tray-menu.png")
+    elif which == "help":
+        app.hide_all()
+        app.open_help()
+        app.help_window.move(0, 0)
+        app.help_window.resize(600, 520)
+        pump(0.8)
+        grab("help.png")
+    elif which == "font-menu":
+        window = list(app.windows.values())[0]
+        menu = window.build_menu()
+        app.hide_all()
+        pump(0.3)
+        popup_at(menu, 8, 8)
+        pump(0.6)
+        head = next(i for i in menu.get_children()
+                    if isinstance(i, Gtk.MenuItem) and i.get_label() == "Размер шрифта")
+        menu.select_item(head)  # как при наведении: раскрывается подменю с ползунком
+        pump(1.0)
+        grab("font-slider-menu.png")
     elif which == "note-menu":
         window = list(app.windows.values())[0]
         menu = window.build_menu()

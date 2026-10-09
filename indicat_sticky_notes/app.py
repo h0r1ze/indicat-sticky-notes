@@ -10,6 +10,7 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import autostart, backup, exchange, theme  # noqa: E402
+from .help_window import HelpWindow, build_about_dialog  # noqa: E402
 from .hotkeys import GlobalHotkeys  # noqa: E402
 from .manager import ManagerWindow  # noqa: E402
 from .note_window import NoteWindow  # noqa: E402
@@ -36,6 +37,7 @@ class StickyApp(Gtk.Application):
         self.windows = {}
         self.manager = None
         self.settings_window = None
+        self.help_window = None
         self.tray = None
         self._monitor = None
         self._reload_source = None
@@ -203,6 +205,16 @@ class StickyApp(Gtk.Application):
         if self.settings_window is None:
             self.settings_window = SettingsWindow(self)
         self.settings_window.present_window()
+
+    def open_help(self):
+        if self.help_window is None:
+            self.help_window = HelpWindow()
+        self.help_window.present_window()
+
+    def show_about(self):
+        dialog = build_about_dialog()
+        dialog.run()
+        dialog.destroy()
 
     def _on_settings_changed(self, changed):
         if "theme" in changed:
@@ -564,6 +576,8 @@ class StickyApp(Gtk.Application):
         menu.append(startup)
         action(menu, "Создать ярлык на рабочем столе", self.create_desktop_shortcut)
         action(menu, "Настройки…", self.open_settings)
+        action(menu, "Справка   F1", self.open_help)
+        action(menu, "О программе", self.show_about)
 
         separator()
         action(menu, "Выход", self.quit)

@@ -9,7 +9,7 @@ export PYTHONPATH="$PWD"
 GDK_SCALE=2 xvfb-run -a -s "-screen 0 1280x800x24+32" python3 tools/make_screenshots.py scenes
 
 # Менеджер, настройки, меню: настоящие окна под оконным менеджером.
-for which in manager settings tray note-menu; do
+for which in manager settings tray note-menu font-menu help; do
     xvfb-run -a -s "-screen 0 900x900x24" dbus-run-session -- \
         sh -c "marco --replace --no-composite >/dev/null 2>&1 & sleep 3; python3 tools/make_screenshots.py windows $which"
 done
