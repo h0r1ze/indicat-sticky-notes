@@ -21,7 +21,7 @@
 
 ## Быстрый старт
 
-Скачайте `.deb` со [страницы релизов](https://github.com/h0r1ze/indicat-sticky-notes/releases/latest) (Debian, Ubuntu, Linux Mint):
+Скачайте `.deb`,`.rpm` со [страницы релизов](https://github.com/h0r1ze/indicat-sticky-notes/releases/latest) (Debian, Ubuntu, Linux Mint):
 
 ```bash
 sudo apt install ./indicat-sticky-notes_*_all.deb
